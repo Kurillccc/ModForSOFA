@@ -1,47 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from scipy.integrate import solve_ivp
-from scipy.integrate import trapezoid
-
-# Параметры системы
-params = {
-    'kb': 1.0,
-    'a0': 1.0,
-    'a1': 1.0,
-    'a2': 1.0,
-    'a3': 1.0,
-    'a4': 1.0,
-    'a5': 1.0,
-    'a6': 1.0,
-    'k': 1.0,
-    'xi': 1.0,
-    'L': 1.0,
-    'omega': 1.0,
-    'y_star': 1.0
-}
-
-# Функция описывает динамику системы (Y - переменные)
-def system(t, Y):
-    Y1, Y2, Y3, Y4, Y5 = Y
-    dY1_dt = -params['kb'] * Y1 + params['a0'] * Y2 + Y3 + params['k'] * params['xi'] * Y4
-    dY2_dt = params['a1'] * Y1 - params['a2'] * Y2
-    dY3_dt = params['a3'] * Y2 - params['a4'] * Y3
-    dY4_dt = params['a5'] * Y3 - params['a6'] * Y4
-    dY5_dt = params['L'] * (Y1 - params['y_star']) + params['omega'] * Y5
-    return [dY1_dt, dY2_dt, dY3_dt, dY4_dt, dY5_dt]
-
-# Функция для оценки фитнеса (значения интеграла)
-def comp_int(owl, tk):
-    # Начальные условия из текущей позиции "сова"
-    Y0 = owl
-    # Решение дифференциального уравнения
-    sol = solve_ivp(system, [0, tk], Y0, t_eval=np.linspace(0, tk, 100))
-    # Интегральное значение фитнеса (например, интеграл суммы квадратов переменных)
-    integral = trapezoid(np.sum(sol.y**2, axis=0), sol.t)
-    return integral
-
-
 # Функция для подсчёта вызовов функции (FitnessCounter)
 class FitnessCounter:
     def __init__(self, function):
@@ -54,6 +13,53 @@ class FitnessCounter:
 
     def reset(self):
         self.calls = 0
+
+def rastrigin(x):
+    return 10 * len(x) + sum(xi**2 - 10 * np.cos(2 * np.pi * xi) for xi in x)
+
+def rosenbrock(x):
+    return sum(100 * (x[i + 1] - x[i]**2)**2 + (1 - x[i])**2 for i in range(len(x) - 1))
+
+def schwefel(x):
+    return 418.9829 * len(x) - sum(xi * np.sin(np.sqrt(abs(xi))) for xi in x)
+
+def parabolic(x):
+    return sum(xi**2 for xi in x)
+
+def ackley(x):
+    a = 20
+    b = 0.2
+    c = 2 * np.pi
+    n = len(x)
+    sum1 = sum(xi**2 for xi in x)
+    sum2 = sum(np.cos(c * xi) for xi in x)
+    return -a * np.exp(-b * np.sqrt(sum1 / n)) - np.exp(sum2 / n) + a + np.e
+
+def griewank(x):
+    sum1 = sum(xi**2 / 4000 for xi in x)
+    prod = np.prod(np.cos(xi / np.sqrt(i + 1)) for i, xi in enumerate(x))
+    return 1 + sum1 - prod
+
+def michalewicz(x):
+    m = 10
+    return -sum(np.sin(xi) * (np.sin((i + 1) * xi**2 / np.pi))**(2 * m) for i, xi in enumerate(x))
+
+def dixon_price(x):
+    return (x[0] - 1)**2 + sum((i + 1) * (2 * x[i]**2 - x[i - 1])**2 for i in range(1, len(x)))
+
+def sphere(x):
+    return -sum(xi**2 for xi in x)
+
+def sum_squares(x):
+    return -sum((i + 1) * xi**2 for i, xi in enumerate(x))
+
+def trid(x):
+    return -(sum((xi - 1)**2 for xi in x) - sum(x[i] * x[i - 1] for i in range(1, len(x))))
+
+def zakharov(x):
+    sum1 = sum(xi**2 for xi in x)
+    sum2 = sum(0.5 * (i + 1) * xi for i, xi in enumerate(x))
+    return -(sum1 + sum2**2 + sum2**4)
 
 # SOFA метод (симуляция)
 # SOFA метод (максимизация)
@@ -105,7 +111,6 @@ def aniso_mutations_method(num_owls, num_iterations, fitness_counter, dimension=
 
     return best_owl, best_fitness, fitness_history, calls_history
 
-
 # Комбинированный поиск (максимизация)
 def combined_search(num_owls, num_iterations, fitness_counter, dimension=10, seed=42):
     np.random.seed(seed)
@@ -128,165 +133,108 @@ def combined_search(num_owls, num_iterations, fitness_counter, dimension=10, see
 
         fitness_history.append(best_fitness)
         calls_history.append(fitness_counter.calls)
+
     return best_owl, best_fitness, fitness_history, calls_history
 
-# Модификация "Наша модификация"
-# СОФА с динамическим управлением ресурсами
-def dynamic_search(num_owls, num_iterations, fitness_counter, dimension, params_init, seed=42):
+# Адаптивный комбинированный поиск (максимизация)
+def ultimate_hybrid_optimization(num_owls, num_iterations, fitness_counter, dimension=10, seed=42):
+    """
+    Универсальный гибридный метод оптимизации.
+    """
     np.random.seed(seed)
+    owls = np.random.uniform(-100, 100, size=(num_owls, dimension))  # Инициализация популяции
+    best_fitness = -np.inf  # Максимизация
+    best_owl = None
+    fitness_history = []
+    calls_history = []
 
-    # Инициализация сов
-    owls = np.random.uniform(-100, 100, size=(num_owls, dimension))  # Диапазон параметров [-100, 100]
-    best_fitness = -np.inf  # Для максимизации
-    best_params = owls[0]
-    fitness_progress = []
+    # Параметры адаптации
+    gamma_0 = 1.0  # Начальный шаг глобального поиска
+    gamma_min = 0.01  # Минимальный шаг
+    elitism_rate = 0.1  # Процент элитных агентов
+    migration_rate = 0.2  # Процент агентов, участвующих в миграции между популяциями
+    local_search_rate = 0.1  # Вероятность применения локального поиска
 
-    global_mutation_scale = 1.0  # Увеличен масштаб мутаций
-    local_step_scale = 0.1
-    progress_threshold = 0.01
-    min_global_fraction = 0.1
-    global_fraction = 0.7  # Начальная доля глобального поиска
-
-    recent_improvements = []
+    # Разделение популяции на группы (мультипопуляционный подход)
+    num_groups = 3  # Число групп
+    group_size = num_owls // num_groups
+    populations = [owls[i * group_size:(i + 1) * group_size] for i in range(num_groups)]
 
     for iteration in range(num_iterations):
-        # Вычисляем фитнес для каждой "совы"
-        fitness = np.array([fitness_counter.evaluate(owl) for owl in owls])
+        new_populations = []
+        for group_index, group in enumerate(populations):
+            # Оценка значений фитнеса
+            fitness = np.array([fitness_counter.evaluate(owl) for owl in group])
+            best_index = fitness.argmax()  # Индекс лучшего агента в группе
+            if fitness[best_index] > best_fitness:
+                best_fitness = fitness[best_index]
+                best_owl = group[best_index]
 
-        # Обновляем лучшее решение
-        best_index = fitness.argmax()
-        if fitness[best_index] > best_fitness:
-            best_fitness = fitness[best_index]
-            best_params = owls[best_index]
+            # Сортируем агентов группы
+            sorted_indices = np.argsort(fitness)[::-1]
+            elite_count = max(1, int(elitism_rate * len(group)))  # Число элитных агентов
+            elite_owls = group[sorted_indices[:elite_count]]  # Сохраняем лучших
 
-        # Обновляем метрику прогресса
-        if len(fitness_progress) > 1:
-            improvement = fitness_progress[-1] - fitness_progress[-2]
-            recent_improvements.append(improvement)
-
-        # Рассчитываем средний прогресс за последние итерации
-        if len(recent_improvements) >= 5:
-            avg_progress = np.mean(recent_improvements[-5:])
-            if avg_progress < progress_threshold:  # Низкий прогресс -> больше глобального поиска
-                global_fraction = min(global_fraction + 0.1, 1.0)
-            else:  # Высокий прогресс -> больше локального поиска
-                global_fraction = max(global_fraction - 0.1, min_global_fraction)
-
-        # Глобальный или локальный поиск
-        for i in range(num_owls):
-            if np.random.rand() < global_fraction:
-                # Глобальный поиск
-                owls[i] += np.random.normal(0, global_mutation_scale, size=dimension)
+            # Адаптивный шаг
+            if iteration < num_iterations // 2:
+                gamma = max(gamma_min, gamma_0 * (1 - iteration / num_iterations))
             else:
-                # Локальный поиск
-                grad = np.random.uniform(-0.5, 0.5, size=dimension)  # Случайный градиент
-                owls[i] += local_step_scale * grad
+                gamma = gamma_min
 
-        # Ограничиваем значения сов в пределах диапазона
-        owls = np.clip(owls, -100, 100)
+            # Мутация для остальных агентов
+            mutated_group = group + gamma * np.random.randn(len(group), dimension)
+            mutated_group = np.clip(mutated_group, -100, 100)
 
-        # Сохраняем прогресс
-        fitness_progress.append(best_fitness)
+            # Локальный поиск для части агентов
+            for i in range(len(mutated_group)):
+                if np.random.rand() < local_search_rate:
+                    mutated_group[i] += 0.1 * np.sign(np.random.randn(dimension))  # Локальное улучшение
 
-    return best_params, best_fitness, fitness_progress
+            # Обновляем популяцию группы
+            mutated_group[:elite_count] = elite_owls  # Добавляем элитных агентов
+            new_populations.append(mutated_group)
 
+        # Миграция между группами
+        for group_index, group in enumerate(new_populations):
+            migrants = int(migration_rate * len(group))
+            if group_index < len(new_populations) - 1:
+                new_populations[group_index][:migrants] = new_populations[group_index + 1][:migrants]
+            else:
+                new_populations[group_index][:migrants] = new_populations[0][:migrants]
 
-# Визуализация сходимости
-def plot_convergence(fitness_histories, labels):
-    plt.figure(figsize=(8, 6))
+        populations = new_populations  # Обновляем популяции
 
-    # График сходимости по итерациям
-    plt.subplot()
-    for history, label in zip(fitness_histories, labels):
-        plt.plot(history, label=label)
-    plt.xlabel('Итерации')
+        # Сохраняем историю
+        fitness_history.append(best_fitness)
+        calls_history.append(fitness_counter.calls)
+
+    return best_owl, best_fitness, fitness_history, calls_history
+
+def plot_convergence(fitness_histories, calls_histories, labels):
+    plt.figure(figsize=(14, 6))
+
+    # График сходимости по вызовам функции
+    plt.subplot(1, 2, 2)
+    for fitness_history, calls_history, label in zip(fitness_histories, calls_histories, labels):
+        plt.plot(calls_history, fitness_history, label=label)
+    plt.xlabel('Число вызовов функции')
     plt.ylabel('Лучшее значение фитнеса')
-    plt.title('Сходимость по итерациям')
+    plt.title('Сходимость по вызовам функции')
     plt.legend()
     plt.grid(True)
 
     plt.tight_layout()
     plt.show()
 
-
-# Пример целевой функции (Rastrigin)
-def rastrigin(x):
-    return 10 * len(x) + sum(xi**2 - 10 * np.cos(2 * np.pi * xi) for xi in x)
-
-def sphere(x):
-    """
-    Функция сферы (простая квадратичная функция):
-    f(x) = sum(xi^2) для всех i
-    """
-    return sum(xi**2 for xi in x)
-
-def ackley(x):
-    """
-    Функция Аклли — имеет несколько локальных минимумов:
-    f(x) = -20 * exp(-0.2 * sqrt(1/n * sum(xi^2))) - exp(1/n * sum(cos(2*pi*xi))) + e + 20
-    """
-    n = len(x)
-    sum1 = sum(xi**2 for xi in x)
-    sum2 = sum(np.cos(2 * np.pi * xi) for xi in x)
-    term1 = -20 * np.exp(-0.2 * np.sqrt(sum1 / n))
-    term2 = -np.exp(sum2 / n)
-    return term1 + term2 + 20 + np.e
-
-def griewank(x):
-    """
-    Функция Гриванка — имеет много локальных минимумов:
-    f(x) = 1 + (sum(xi^2) / 4000) - product(cos(xi / sqrt(i)))
-    """
-    sum1 = sum(xi**2 for xi in x) / 4000
-    prod = np.prod([np.cos(xi / np.sqrt(i + 1)) for i, xi in enumerate(x)])
-    return 1 + sum1 - prod
-
-def griewank(x):
-    return 0
-# -----------------------------------
-
-def start(func):
-    # Целевая функция
-    test_function = func
-    fitness_counter = FitnessCounter(test_function)
-
-    # Запуск методов
-    fitness_counter.reset()
-    best_owl_sofa, best_fitness_sofa, fitness_history_sofa, calls_history_sofa = sofa_method(num_owls, num_iterations,fitness_counter, dimension)
-    print("Метод СОФА: лучшее решение:",np.array2string(best_owl_sofa, separator=', ', precision=4, floatmode='fixed'),"Значение интеграла:", f"{best_fitness_sofa:.4f}")
-
-    fitness_counter.reset()
-    best_owl_aniso, best_fitness_aniso, fitness_history_aniso, calls_history_aniso = aniso_mutations_method(num_owls,num_iterations,fitness_counter,dimension)
-    print("Метод СОФА с анизотропными мутациями: лучшее решение:",np.array2string(best_owl_aniso, separator=', ', precision=4, floatmode='fixed'),"Значение интеграла:", f"{best_fitness_aniso:.4f}")
-
-    fitness_counter.reset()
-    best_owl_combined, best_fitness_combined, fitness_history_combined, calls_history_combined = combined_search(num_owls, num_iterations, fitness_counter, dimension)
-    print("Метод СОФА с комбинированным поиском: лучшее решение:",np.array2string(best_owl_combined, separator=', ', precision=4, floatmode='fixed'),"Значение интеграла:", f"{best_fitness_combined:.4f}")
-
-    fitness_counter.reset()
-    best_owl_adaptive, best_fitness_adaptive, fitness_history_adaptive, calls_history_adaptive = dynamic_search(num_owls, num_iterations, fitness_counter, dimension,params)
-    print(f"\nМетод СОФА с динамическим управлением ресурсами: лучшее решение:: {best_owl_adaptive}")
-    print(f"Значение интеграла:: {best_fitness_adaptive}")
-
-    # Визуализация всех методов
-    plot_convergence
-    (
-        [fitness_history_sofa, fitness_history_aniso, fitness_history_combined, fitness_history_adaptive],
-        ['SOFA', 'Анизотропные мутации', 'Комбинированный поиск', 'Адаптивный комбинированный поиск']
-    )
-
 # Запуск тестов
 if __name__ == "__main__":
-    # params
     num_owls = 50  # Размер популяции
-    num_iterations = 100  # Число итераций
+    num_iterations = 1000  # Число итераций
     dimension = 10  # Размерность задачи
 
-    # Start
-
     # Тестирование разных функций
-    test_functions = [rastrigin, sphere, ackley, griewank]
-    function_names = ['Rastrigin', 'Sphere', 'Ackley', 'Griewank']
+    test_functions = [rastrigin, rosenbrock, schwefel, parabolic, ackley, michalewicz, dixon_price, sphere, sum_squares, trid, zakharov]
+    function_names = ['rastrigin', 'rosenbrock', 'schwefel', 'parabolic', 'ackley', 'michalewicz', 'dixon_price', 'sphere', 'sum_squares', 'trid', 'zakharov']
 
     for test_function, function_name in zip(test_functions, function_names):
         print(f"Тестирование {function_name}...")
@@ -295,24 +243,20 @@ if __name__ == "__main__":
 
         # Запуск методов
         fitness_counter.reset()
-        best_owl_sofa, best_fitness_sofa, fitness_history_sofa, calls_history_sofa = sofa_method(num_owls,num_iterations,fitness_counter,dimension)
-        print("Метод СОФА: лучшее решение:",np.array2string(best_owl_sofa, separator=', ', precision=4, floatmode='fixed'), "Значение интеграла:",f"{best_fitness_sofa:.4f}")
+        best_owl_sofa, best_fitness_sofa, fitness_history_sofa, calls_history_sofa = sofa_method(num_owls, num_iterations, fitness_counter, dimension)
 
         fitness_counter.reset()
         best_owl_aniso, best_fitness_aniso, fitness_history_aniso, calls_history_aniso = aniso_mutations_method(num_owls, num_iterations, fitness_counter, dimension)
-        print("Метод СОФА с анизотропными мутациями: лучшее решение:",np.array2string(best_owl_aniso, separator=', ', precision=4, floatmode='fixed'), "Значение интеграла:",f"{best_fitness_aniso:.4f}")
 
         fitness_counter.reset()
         best_owl_combined, best_fitness_combined, fitness_history_combined, calls_history_combined = combined_search(num_owls, num_iterations, fitness_counter, dimension)
-        print("Метод СОФА с комбинированным поиском: лучшее решение:",np.array2string(best_owl_combined, separator=', ', precision=4, floatmode='fixed'), "Значение интеграла:",f"{best_fitness_combined:.4f}")
 
         fitness_counter.reset()
-        best_owl_adaptive, best_fitness_adaptive, fitness_history_adaptive = dynamic_search(num_owls, num_iterations, fitness_counter, dimension, params)
-        print(f"\nМетод СОФА с динамическим управлением ресурсами: лучшее решение:: {best_owl_adaptive}")
-        print(f"Значение интеграла:: {best_fitness_adaptive}")
+        best_owl_adaptive, best_fitness_adaptive, fitness_history_adaptive, calls_history_adaptive = ultimate_hybrid_optimization(num_owls, num_iterations, fitness_counter, dimension)
 
         # Визуализация всех методов для текущей функции
         plot_convergence(
             [fitness_history_sofa, fitness_history_aniso, fitness_history_combined, fitness_history_adaptive],
+            [calls_history_sofa, calls_history_aniso, calls_history_combined, calls_history_adaptive],
             ['SOFA', 'Анизотропные мутации', 'Комбинированный поиск', 'Наша модификация']
         )
